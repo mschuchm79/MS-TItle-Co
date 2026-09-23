@@ -1,0 +1,29 @@
+{
+  "_note": "ILLUSTRATIVE rates only. Title premiums, transfer taxes, and customary payer splits are set by state (and often county). Replace these with your filed rate manual before quoting real customers.",
+  "ownersPolicy": {
+    "minimumPremium": 250,
+    "tiers": [
+      { "upTo": 100000, "perThousand": 5.75 },
+      { "upTo": 500000, "perThousand": 5.0 },
+      { "upTo": 1000000, "perThousand": 2.5 },
+      { "upTo": null, "perThousand": 2.25 }
+    ]
+  },
+  "lendersPolicy": {
+    "simultaneousIssueFee": 150,
+    "excessRatePercentOfOwners": 100
+  },
+  "endorsementsFlat": 150,
+  "settlementFee": 750,
+  "settlementFeeSplit": { "buyer": 0.5, "seller": 0.5 },
+  "recording": { "deed": 45, "mortgage": 125, "release": 40 },
+  "transferTaxPerThousand": 1.0,
+  "payers": {
+    "ownersPolicy": "seller",
+    "lendersPolicy": "buyer",
+    "endorsements": "buyer",
+    "recordingDeed": "buyer",
+    "recordingMortgage": "buyer",
+    "transferTax": "seller"
+  }
+}
