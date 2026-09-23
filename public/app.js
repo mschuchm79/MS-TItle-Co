@@ -147,6 +147,21 @@ async function renderDashboard() {
   `);
 }
 
+// ------------------------------------------------------------------ BS&A Online
+
+const BSA_HOME = 'https://bsaonline.com';
+
+function bsaField(value) {
+  return html`
+    <label>BS&amp;A Online municipality <span class="small">(uid)</span>
+      <input name="bsa_uid" inputmode="numeric" list="bsa-municipalities" value="${value ?? ''}" placeholder="e.g. 384 – City of Lansing">
+      <datalist id="bsa-municipalities">
+        ${META.bsaMunicipalities.map((m) => html`<option value="${m.uid}">${m.name}, ${m.state}</option>`)}
+      </datalist>
+      <span class="small">Not listed? Open the municipality on <a href="${BSA_HOME}" target="_blank" rel="noopener">bsaonline.com</a> and copy the <code>uid=</code> number from the address bar.</span>
+    </label>`;
+}
+
 // ------------------------------------------------------------------ new file
 
 function renderNew() {
@@ -165,6 +180,7 @@ function renderNew() {
             <label>County<input name="county"></label>
           </div>
           <label>Parcel / APN<input name="parcel_number"></label>
+          ${bsaField()}
           <label>Legal description<textarea name="legal_description"></textarea></label>
         </div>
         <div class="card">
@@ -226,6 +242,7 @@ const TABS = [
   ['tasks', 'Checklist'],
   ['commitment', 'Commitment'],
   ['parties', 'Parties'],
+  ['municipal', 'Municipal (BS&A)'],
   ['documents', 'Documents'],
   ['costs', 'Closing costs'],
   ['details', 'Details'],
@@ -245,6 +262,7 @@ async function renderFile(id, tab) {
           <div class="small muted">${f.file_number} · ${f.financed ? `Financed (${usd0(f.loan_amount)} loan)` : 'Cash purchase'}</div>
           <h1>${f.property_address}</h1>
           <div class="muted">${[f.city, f.state, f.zip].filter(Boolean).join(', ')}${f.county ? ` · ${f.county} County` : ''}</div>
+          ${f.bsa ? html`<a class="btn btn-sm" style="margin-top:8px" href="${f.bsa.links.find((l) => l.key === 'address')?.url ?? f.bsa.links[0].url}" target="_blank" rel="noopener">BS&amp;A Online ↗</a>` : ''}
         </div>
         <div style="text-align:right">
           <div class="small muted">Purchase price</div>
@@ -277,10 +295,10 @@ async function renderFile(id, tab) {
     </div>
 
     <nav class="tabs">
-      ${TABS.map(([k, label]) => html`<a href="#/files/${f.id}/${k}" class="${tab === k ? 'active' : ''}">${label}${k === 'tasks' ? ` (${f.progress.tasksDone}/${f.progress.tasksTotal})` : ''}</a>`)}
+      ${TABS.map(([k, label]) => html`<a href="#/files/${f.id}/${k}" class="${tab === k ? 'active' : ''}">${label}${k === 'tasks' ? ` (${f.progress.tasksDone}/${f.progress.tasksTotal})` : ''}${k === 'municipal' && f.municipal.some((m) => m.status === 'not_checked') ? ` (${f.municipal.filter((m) => m.status === 'not_checked').length} to check)` : ''}</a>`)}
     </nav>
 
-    ${({ tasks: tasksTab, commitment: commitmentTab, parties: partiesTab, documents: documentsTab, costs: costsTab, details: detailsTab, activity: activityTab }[tab] || tasksTab)(f)}
+    ${({ tasks: tasksTab, commitment: commitmentTab, parties: partiesTab, municipal: municipalTab, documents: documentsTab, costs: costsTab, details: detailsTab, activity: activityTab }[tab] || tasksTab)(f)}
   `);
 }
 
@@ -418,6 +436,51 @@ function documentsTab(f) {
     </div>`;
 }
 
+function municipalTab(f) {
+  const due = f.municipal.filter((m) => m.status === 'balance_due').reduce((sum, m) => sum + m.amount, 0);
+  const statusCls = { not_checked: 'warn', clear: 'ok', balance_due: 'danger', paid: 'ok' };
+  return html`
+    <div class="card">
+      <div class="spread">
+        <div>
+          <h2>BS&amp;A Online</h2>
+          ${f.bsa
+            ? html`<div class="muted">${f.bsa.municipality ?? 'Municipality'} · uid ${f.bsa.uid}</div>`
+            : html`<div class="muted">No BS&amp;A municipality is set for this file. Add its uid on the <a href="#/files/${f.id}/details">Details</a> tab to get one-click searches.</div>`}
+        </div>
+        <a class="btn" href="${f.bsa ? f.bsa.links[0].url : BSA_HOME}" target="_blank" rel="noopener">Open bsaonline.com ↗</a>
+      </div>
+      ${f.bsa ? html`
+        <div class="row" style="margin-top:12px">
+          ${f.bsa.links.filter((l) => l.key !== 'home').map((l) => html`<a class="btn btn-primary btn-sm" href="${l.url}" target="_blank" rel="noopener">${l.label} ↗</a>`)}
+        </div>
+        ${!f.parcel_number ? html`<p class="small muted">Tip: add the parcel number on the Details tab for an exact parcel search.</p>` : ''}` : ''}
+      <p class="small muted" style="margin-top:12px">Searches open in a new tab. BS&amp;A may ask you to complete a quick security check first. The results pages include property tax, utility billing, special assessment, assessing, and building records.</p>
+    </div>
+
+    <div class="card">
+      <div class="spread">
+        <h2>Municipal records checklist</h2>
+        ${due > 0 ? html`<span class="badge danger">${usd(due)} due at closing (seller)</span>` : ''}
+      </div>
+      <p class="small muted">Record what you find on BS&amp;A. Every item must be checked before the file can leave “Clearing Title”. Balances marked <strong>Balance due</strong> are added to the seller's side on the Closing costs tab.</p>
+      ${f.municipal.map((m) => html`
+        <form data-form="municipal" data-id="${m.id}" class="item" style="flex-wrap:wrap">
+          <div class="body" style="flex:1 1 240px">
+            <div>${m.label}</div>
+            <div class="small muted">${m.checked_at ? `Checked ${niceDateTime(m.checked_at)}` : 'Not checked yet'}</div>
+          </div>
+          <select name="status" aria-label="Status">
+            ${META.municipalStatuses.map((st) => html`<option value="${st}" ${m.status === st ? 'selected' : ''}>${titleCase(st)}</option>`)}
+          </select>
+          <input name="amount" type="number" min="0" step="0.01" value="${m.amount || ''}" placeholder="Amount" style="width:110px" aria-label="Amount">
+          <input name="notes" value="${m.notes || ''}" placeholder="Notes (account #, meter read date…)" style="flex:1 1 200px;width:auto" aria-label="Notes">
+          <span class="badge ${statusCls[m.status]}">${titleCase(m.status)}</span>
+          <button class="btn btn-sm">Save</button>
+        </form>`)}
+    </div>`;
+}
+
 function costsTab(f) {
   return html`<div class="card"><h2>Estimated title & escrow charges</h2>${costsTable(f.costs)}</div>`;
 }
@@ -433,6 +496,7 @@ function detailsTab(f) {
         <label>ZIP<input name="zip" value="${f.zip || ''}"></label>
         <label>County<input name="county" value="${f.county || ''}"></label>
         <label>Parcel / APN<input name="parcel_number" value="${f.parcel_number || ''}"></label>
+        ${bsaField(f.bsa_uid)}
         <label>Closing date<input name="closing_date" type="date" value="${f.closing_date || ''}"></label>
         <label>Purchase price<input name="purchase_price" type="number" min="1" step="0.01" value="${f.purchase_price}"></label>
         <label>Loan amount<input name="loan_amount" type="number" min="0" step="0.01" value="${f.loan_amount}"></label>
@@ -580,6 +644,8 @@ document.addEventListener('submit', async (e) => {
       return run(() => api('POST', `/transactions/${tid}/documents`, data), 'Document tracked');
     case 'add-note':
       return run(() => api('POST', `/transactions/${tid}/notes`, data), 'Note added');
+    case 'municipal':
+      return run(() => api('PATCH', `/transactions/${tid}/municipal/${form.dataset.id}`, data), 'Municipal record saved');
     case 'update':
       return run(() => api('PATCH', `/transactions/${tid}`, data), 'Saved');
     default:

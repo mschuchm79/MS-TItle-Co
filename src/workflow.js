@@ -25,6 +25,7 @@ export const STAGES = [
       { title: 'Search for liens, judgments, and unpaid taxes', offsetDays: -22 },
       { title: 'Order survey (if required)', offsetDays: -21 },
       { title: 'Request HOA estoppel / resale certificate (if applicable)', offsetDays: -21 },
+      { title: 'Pull BS&A Online tax, utility, and special assessment records', offsetDays: -21 },
     ],
   },
   {
@@ -39,7 +40,7 @@ export const STAGES = [
   {
     key: 'curative',
     label: 'Clearing Title',
-    description: 'Satisfy every Schedule B-I requirement before closing.',
+    description: 'Satisfy every Schedule B-I requirement and check municipal records before closing.',
     requiresClearedCommitment: true,
     tasks: [
       { title: 'Receive payoff statement(s)', offsetDays: -10 },
@@ -53,6 +54,7 @@ export const STAGES = [
     description: 'Documents prepared, figures balanced, signing appointment set.',
     tasks: [
       { title: 'Prepare deed and closing documents', offsetDays: -4 },
+      { title: 'Order final water / sewer meter read and utility transfer', offsetDays: -3 },
       { title: 'Balance settlement statement / Closing Disclosure with lender', offsetDays: -3, financedOnly: true },
       { title: 'Prepare settlement statement', offsetDays: -3 },
       { title: 'Schedule signing appointment with all parties', offsetDays: -3 },
@@ -76,6 +78,7 @@ export const STAGES = [
     tasks: [
       { title: 'Receive lender funding', offsetDays: 0, financedOnly: true },
       { title: 'Disburse lien payoffs', offsetDays: 1 },
+      { title: 'Pay outstanding tax / utility balances to the municipality', offsetDays: 1 },
       { title: 'Disburse seller proceeds and commissions', offsetDays: 1 },
     ],
   },

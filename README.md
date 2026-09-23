@@ -9,6 +9,7 @@ A web app for running the title & escrow side of a residential real estate purch
 - **Generated closing checklist.** Opening a file creates about 30 tasks, each due a set number of days before or after the closing date. Lender-only tasks are left out for cash deals. Moving the closing date reschedules every open task.
 - **Stage gates.** A file can't advance while tasks in its current stage are unfinished, and it can't leave *Clearing Title* while any Schedule B-I requirement is still open.
 - **Title commitment.** Schedule A (proposed insureds, vesting, policy amounts, legal description), Schedule B-I requirements (open / satisfied / waived), and Schedule B-II exceptions (remains / removed). New files start with the standard items.
+- **BS&A Online (bsaonline.com) integration.** Set a file's BS&A municipality `uid` to get one-click, pre-filled searches by address, parcel number, and owner for property tax, utility billing, special assessment, assessing, and building records. Each file gets a *Municipal records* checklist (taxes, water/sewer, special assessments, assessing record, open permits). Every item must be checked before the file leaves *Clearing Title*, and any **balance due** is added to the seller's side of the closing costs.
 - **Parties.** Buyers, sellers, lenders, agents, attorneys, HOA, and others, with contact details.
 - **Documents.** Tracks each document from requested to received, reviewed, and recorded, with file upload and download.
 - **Closing cost estimate.** Owner's and lender's title premiums (tiered rates, simultaneous-issue pricing), recording fees, transfer tax, and the settlement fee, split between buyer and seller.
@@ -33,12 +34,17 @@ Environment variables: `PORT` (default 3000), `DATA_DIR` (default `./data`; hold
 
 `config/rates.json` holds **illustrative** premium tiers, fees, transfer tax, and the customary payer for each charge. Title rates are filed by state and often vary by county, so replace these with your rate manual before quoting real customers.
 
+## BS&A Online
+
+BS&A has no public API, and its searches sit behind a security check, so the app links out instead of pulling data automatically. Searches open in a new tab, and staff record what they find on the file's **Municipal (BS&A)** tab. To find a municipality's `uid`, open it on bsaonline.com and read `uid=` in the address bar. Add your common jurisdictions to `config/bsa-municipalities.json` so they show up as suggestions.
+
 ## Project layout
 
 ```
 src/
   workflow.js   stages, task templates, standard B-I/B-II items
   costs.js      premium and closing-cost calculator
+  bsa.js        BS&A Online links and municipal-records checklist
   service.js    business logic and validation (stage gates, rescheduling, …)
   app.js        Express REST API (/api/…)
   db.js         SQLite schema
@@ -58,6 +64,7 @@ test/           node:test suites for the API and cost math
 | POST | `/api/transactions/:id/advance` · `/revert` | Move between stages (409 with blockers if gated) |
 | POST / PATCH / DELETE | `/api/transactions/:id/{tasks,parties,commitment,documents}[/:childId]` | Manage child records |
 | PUT / GET | `/api/transactions/:id/documents/:docId/file` | Upload (raw body plus `X-Filename`) and download |
+| PATCH | `/api/transactions/:id/municipal/:checkId` | Record a municipal (BS&A) check: `status`, `amount`, `notes` |
 | POST | `/api/transactions/:id/notes` | Add a note |
 | GET | `/api/estimate?price=&loan=` | Closing cost estimate |
 

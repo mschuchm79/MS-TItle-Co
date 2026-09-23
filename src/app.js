@@ -5,6 +5,7 @@ import { join, basename } from 'node:path';
 import * as svc from './service.js';
 import { STAGES, PARTY_ROLES, DOCUMENT_CATEGORIES, DOCUMENT_STATUSES } from './workflow.js';
 import { estimateClosingCosts } from './costs.js';
+import { BSA_MUNICIPALITIES, MUNICIPAL_STATUSES } from './bsa.js';
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -24,6 +25,8 @@ export function createApp({ db, uploadDir }) {
       partyRoles: PARTY_ROLES,
       documentCategories: DOCUMENT_CATEGORIES,
       documentStatuses: DOCUMENT_STATUSES,
+      bsaMunicipalities: BSA_MUNICIPALITIES,
+      municipalStatuses: MUNICIPAL_STATUSES,
     }),
   );
 
@@ -78,6 +81,10 @@ export function createApp({ db, uploadDir }) {
     svc.deleteCommitmentItem(db, tid(req), req.params.childId);
     res.status(204).end();
   });
+
+  api.patch('/transactions/:id/municipal/:childId', (req, res) =>
+    res.json(svc.updateMunicipalCheck(db, tid(req), req.params.childId, req.body ?? {})),
+  );
 
   api.post('/transactions/:id/documents', (req, res) =>
     res.status(201).json(svc.addDocument(db, tid(req), req.body ?? {})),

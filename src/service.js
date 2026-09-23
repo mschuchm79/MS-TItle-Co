@@ -1,4 +1,5 @@
-import { tx } from './db.js';
+import { tx, insertMunicipalChecks } from './db.js';
+import { bsaLinks, MUNICIPAL_STATUSES } from './bsa.js';
 import {
   STAGES,
   STAGE_KEYS,
@@ -49,6 +50,13 @@ function date(v, field) {
   return s;
 }
 
+function bsaUid(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0 || n > 1e6) throw bad('bsa_uid must be a positive whole number (the uid from a bsaonline.com URL)');
+  return n;
+}
+
 function oneOf(v, allowed, field) {
   if (!allowed.includes(v)) throw bad(`${field} must be one of: ${allowed.join(', ')}`);
   return v;
@@ -85,6 +93,7 @@ function cleanTransactionInput(input, { partial = false } = {}) {
   if ('purchase_price' in input) out.purchase_price = money(input.purchase_price, 'purchase_price');
   if ('loan_amount' in input) out.loan_amount = money(input.loan_amount, 'loan_amount');
   if ('closing_date' in input) out.closing_date = date(input.closing_date, 'closing_date');
+  if ('bsa_uid' in input) out.bsa_uid = bsaUid(input.bsa_uid);
 
   if (!partial || 'property_address' in out) {
     if (!out.property_address) throw bad('property_address is required');
@@ -122,6 +131,7 @@ export function createTransaction(db, input) {
     );
     for (const r of standardRequirements({ financed })) insItem.run(id, 'B-I', r, 'open');
     for (const e of STANDARD_EXCEPTIONS) insItem.run(id, 'B-II', e, 'remains');
+    insertMunicipalChecks(db, id);
 
     const insParty = db.prepare(
       'INSERT INTO parties (transaction_id, role, name, company, email, phone) VALUES (?, ?, ?, ?, ?, ?)',
@@ -152,6 +162,11 @@ export function getBlockers(db, t) {
       .prepare("SELECT id, description FROM commitment_items WHERE transaction_id = ? AND schedule = 'B-I' AND status = 'open'")
       .all(t.id);
     for (const r of openReqs) blockers.push({ type: 'requirement', id: r.id, message: `Open B-I requirement: ${r.description}` });
+
+    const unchecked = db
+      .prepare("SELECT id, label FROM municipal_checks WHERE transaction_id = ? AND status = 'not_checked' ORDER BY id")
+      .all(t.id);
+    for (const m of unchecked) blockers.push({ type: 'municipal', id: m.id, message: `Municipal record not checked: ${m.label}` });
   }
   return blockers;
 }
@@ -166,20 +181,31 @@ function progress(db, t) {
 export function getTransaction(db, id) {
   const t = requireTransaction(db, id);
   const q = (sql) => db.prepare(sql).all(t.id);
+  const parties = q('SELECT * FROM parties WHERE transaction_id = ? ORDER BY role, name');
+  const municipal = q('SELECT * FROM municipal_checks WHERE transaction_id = ? ORDER BY id');
+  const costs = estimateClosingCosts({ purchasePrice: t.purchase_price, loanAmount: t.loan_amount });
+  // Municipal balances found on BS&A are paid from seller proceeds at closing.
+  const dues = municipal.filter((m) => m.status === 'balance_due' && m.amount > 0);
+  for (const m of dues) costs.lines.push({ label: `Municipal balance – ${m.label}`, amount: m.amount, payer: 'seller' });
+  const dueTotal = dues.reduce((sum, m) => sum + m.amount, 0);
+  costs.sellerTotal = Math.round((costs.sellerTotal + dueTotal) * 100) / 100;
+  costs.grandTotal = Math.round((costs.grandTotal + dueTotal) * 100) / 100;
   return {
     ...t,
     financed: t.loan_amount > 0,
     stage_label: getStage(t.stage)?.label,
-    parties: q('SELECT * FROM parties WHERE transaction_id = ? ORDER BY role, name'),
+    parties,
     tasks: q('SELECT * FROM tasks WHERE transaction_id = ? ORDER BY sort_order, id').sort(
       (a, b) => stageIndex(a.stage) - stageIndex(b.stage),
     ),
     commitment: q('SELECT * FROM commitment_items WHERE transaction_id = ? ORDER BY schedule, id'),
     documents: q('SELECT * FROM documents WHERE transaction_id = ? ORDER BY id DESC'),
+    municipal,
+    bsa: bsaLinks(t, parties.find((p) => p.role === 'seller')?.name),
     activity: q('SELECT * FROM activity WHERE transaction_id = ? ORDER BY id DESC LIMIT 200'),
     blockers: getBlockers(db, t),
     progress: progress(db, t),
-    costs: estimateClosingCosts({ purchasePrice: t.purchase_price, loanAmount: t.loan_amount }),
+    costs,
   };
 }
 
@@ -454,6 +480,25 @@ export function deleteDocument(db, transactionId, docId) {
   db.prepare('DELETE FROM documents WHERE id = ?').run(doc.id);
   logActivity(db, doc.transaction_id, `Document removed: ${doc.name}`);
   return doc;
+}
+
+// ---------------------------------------------------------------- municipal (BS&A)
+
+export function updateMunicipalCheck(db, transactionId, checkId, input) {
+  const check = requireChild(db, 'municipal_checks', transactionId, checkId, 'Municipal check');
+  const status = 'status' in input ? oneOf(input.status, MUNICIPAL_STATUSES, 'status') : check.status;
+  const amount = 'amount' in input ? money(input.amount, 'amount') : check.amount;
+  const notes = 'notes' in input ? str(input.notes, 2000) : check.notes;
+  if (status === 'balance_due' && !(amount > 0)) throw bad('Enter the amount due for a balance-due item');
+  db.prepare(
+    "UPDATE municipal_checks SET status = ?, amount = ?, notes = ?, checked_at = CASE WHEN ? = 'not_checked' THEN NULL ELSE datetime('now') END WHERE id = ?",
+  ).run(status, amount, notes, status, check.id);
+  if (status !== check.status || amount !== check.amount) {
+    const amt = status === 'balance_due' ? ` ($${amount.toFixed(2)})` : '';
+    logActivity(db, check.transaction_id, `Municipal record ${check.label}: ${status.replaceAll('_', ' ')}${amt}`);
+  }
+  touch(db, check.transaction_id);
+  return db.prepare('SELECT * FROM municipal_checks WHERE id = ?').get(check.id);
 }
 
 // ---------------------------------------------------------------- notes & dashboard

@@ -1,0 +1,21 @@
+{
+  "_note": "BS&A Online municipality IDs (the `uid` in bsaonline.com URLs). Find any municipality's uid by opening its page on bsaonline.com and reading uid=… from the address bar. Add your common jurisdictions here.",
+  "municipalities": [
+    { "uid": 384, "name": "City of Lansing", "state": "MI" },
+    { "uid": 115, "name": "City of Grand Rapids", "state": "MI" },
+    { "uid": 320, "name": "City of East Grand Rapids", "state": "MI" },
+    { "uid": 272, "name": "City of Southfield", "state": "MI" },
+    { "uid": 426, "name": "City of Southgate", "state": "MI" },
+    { "uid": 309, "name": "City of Jackson", "state": "MI" },
+    { "uid": 225, "name": "City of Mason", "state": "MI" },
+    { "uid": 629, "name": "City of Allegan", "state": "MI" },
+    { "uid": 1363, "name": "City of Lowell", "state": "MI" },
+    { "uid": 684, "name": "Canton Township", "state": "MI" },
+    { "uid": 284, "name": "Ann Arbor Charter Township", "state": "MI" },
+    { "uid": 252, "name": "Hartland Township", "state": "MI" },
+    { "uid": 401, "name": "Armada Township", "state": "MI" },
+    { "uid": 2223, "name": "Village of Grosse Pointe Shores", "state": "MI" },
+    { "uid": 685, "name": "Bay County", "state": "MI" },
+    { "uid": 1951, "name": "Benzie County", "state": "MI" }
+  ]
+}

@@ -17,6 +17,9 @@ function completeStagesAndAdvance(t, times) {
       for (const item of cur.commitment.filter((c) => c.schedule === 'B-I' && c.status === 'open')) {
         svc.updateCommitmentItem(db, t.id, item.id, { status: 'satisfied' });
       }
+      for (const m of cur.municipal.filter((x) => x.status === 'not_checked')) {
+        svc.updateMunicipalCheck(db, t.id, m.id, { status: 'clear' });
+      }
     }
     svc.advanceStage(db, t.id);
   }
@@ -51,7 +54,8 @@ const b = svc.createTransaction(db, {
 completeStagesAndAdvance(b, 4);
 
 const c = svc.createTransaction(db, {
-  property_address: '2200 Oak Hollow Ln', city: 'Orlando', state: 'FL', zip: '32803', county: 'Orange',
+  property_address: '2200 Oak Hollow Ln', city: 'Lansing', state: 'MI', zip: '48912', county: 'Ingham',
+  parcel_number: '33-01-01-15-326-011', bsa_uid: 384,
   purchase_price: 329900, loan_amount: 313405, closing_date: addDays(today, 27),
   parties: [
     { role: 'buyer', name: 'Taylor Brooks' },
@@ -59,5 +63,8 @@ const c = svc.createTransaction(db, {
   ],
 });
 svc.updateTask(db, c.id, svc.getTransaction(db, c.id).tasks[0].id, { completed: true });
+const cMuni = svc.getTransaction(db, c.id).municipal;
+svc.updateMunicipalCheck(db, c.id, cMuni.find((m) => m.category === 'property_tax').id, { status: 'clear', notes: '2025 summer & winter paid' });
+svc.updateMunicipalCheck(db, c.id, cMuni.find((m) => m.category === 'utility').id, { status: 'balance_due', amount: 186.52, notes: 'Acct 004512-01; final read to be ordered' });
 
 console.log('Seeded 3 demo files.');
