@@ -128,7 +128,15 @@ test('walks a file through the full lifecycle, gated by B-I requirements', async
 
   let stage;
   do {
-    await completeCurrentStage(id);
+    const cur = await completeCurrentStage(id);
+    if (cur.stage === 'scheduled') {
+      const blocked2 = await call('POST', `/transactions/${id}/advance`);
+      assert.equal(blocked2.status, 409);
+      assert.ok(blocked2.data.details.every((d) => d.type === 'borrower_document'));
+      for (const d of cur.documents.filter((x) => x.requested_from === 'borrower')) {
+        await call('PATCH', `/transactions/${id}/documents/${d.id}`, { status: 'reviewed' });
+      }
+    }
     const res = await call('POST', `/transactions/${id}/advance`);
     assert.equal(res.status, 200);
     stage = res.data.stage;

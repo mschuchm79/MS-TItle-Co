@@ -2,6 +2,9 @@
 import { openDatabase } from './db.js';
 import * as svc from './service.js';
 import { addDays } from './workflow.js';
+import { createPortalLink } from './portal.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 const dataDir = process.env.DATA_DIR || new URL('../data', import.meta.url).pathname;
 const db = openDatabase(process.env.DB_PATH || `${dataDir}/title.db`);
@@ -34,6 +37,7 @@ const a = svc.createTransaction(db, {
     { role: 'seller', name: 'Pat & Casey Nguyen', email: 'nguyen.family@example.com' },
     { role: 'lender', name: 'Sunrise Home Lending', company: 'Sunrise Home Lending', email: 'closings@example.com' },
     { role: 'buyer_agent', name: 'Morgan Lee', company: 'Bayside Realty' },
+    { role: 'escrow_officer', name: 'Dana Whitfield', company: 'MS Title Co', email: 'dana@example.com', phone: '517-555-0100' },
   ],
 });
 completeStagesAndAdvance(a, 3);
@@ -67,4 +71,14 @@ const cMuni = svc.getTransaction(db, c.id).municipal;
 svc.updateMunicipalCheck(db, c.id, cMuni.find((m) => m.category === 'property_tax').id, { status: 'clear', notes: '2025 summer & winter paid' });
 svc.updateMunicipalCheck(db, c.id, cMuni.find((m) => m.category === 'utility').id, { status: 'balance_due', amount: 186.52, notes: 'Acct 004512-01; final read to be ordered' });
 
+// Borrower portal demo: a link for the first file and one upload awaiting review.
+const buyer = svc.getTransaction(db, a.id).parties.find((p) => p.role === 'buyer');
+const link = createPortalLink(db, a.id, { party_id: buyer.id });
+const idDoc = svc.getTransaction(db, a.id).documents.find((d) => d.name.startsWith('Government-issued'));
+mkdirSync(`${dataDir}/uploads`, { recursive: true });
+const storedName = randomUUID();
+writeFileSync(`${dataDir}/uploads/${storedName}`, '%PDF-1.4 demo drivers license');
+svc.attachDocumentFile(db, idDoc, { filename: 'drivers-license.pdf', storedName, size: 29 }, { by: buyer.name });
+
 console.log('Seeded 3 demo files.');
+console.log(`Demo borrower portal: http://localhost:${process.env.PORT || 3000}${link.path}`);

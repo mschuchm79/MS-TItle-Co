@@ -57,7 +57,7 @@ const stageBadge = (key, label) => {
 
 // ------------------------------------------------------------------ router
 
-const state = { stageFilter: '', q: '', file: null };
+const state = { stageFilter: '', q: '', file: null, newLink: null };
 
 async function route() {
   if (!META) META = await api('GET', '/meta');
@@ -85,7 +85,20 @@ async function renderDashboard() {
       <div class="stat"><div class="n">${dash.activeFiles}</div><div class="l">Active files</div></div>
       <div class="stat"><div class="n">${dash.upcomingClosings.length}</div><div class="l">Closing in next 14 days</div></div>
       <div class="stat"><div class="n" style="color:${dash.overdueTasks.length ? 'var(--danger)' : 'inherit'}">${dash.overdueTasks.length}</div><div class="l">Overdue tasks</div></div>
+      <div class="stat"><div class="n" style="color:${dash.borrowerUploads.length ? 'var(--warn)' : 'inherit'}">${dash.borrowerUploads.length}</div><div class="l">Borrower uploads to review</div></div>
     </div>
+
+    ${dash.borrowerUploads.length ? html`
+      <div class="card">
+        <h2>Borrower uploads to review</h2>
+        <table><tbody>
+          ${dash.borrowerUploads.slice(0, 8).map((d) => html`
+            <tr class="clickable" data-href="#/files/${d.transaction_id}/documents">
+              <td>${d.name}<div class="small muted">${d.file_number} · ${d.property_address}</div></td>
+              <td class="small muted">${niceDateTime(d.uploaded_at)}</td>
+            </tr>`)}
+        </tbody></table>
+      </div>` : ''}
 
     <div class="card">
       <h2>Pipeline</h2>
@@ -251,6 +264,7 @@ const TABS = [
 
 async function renderFile(id, tab) {
   const f = await api('GET', `/transactions/${id}`);
+  if (state.newLink && state.newLink.fileId !== f.id) state.newLink = null;
   state.file = f;
   const curIdx = f.progress.stageIndex;
   const isClosed = f.stage === 'closed';
@@ -405,29 +419,101 @@ function partiesTab(f) {
     </div>`;
 }
 
+function docRow(f, d) {
+  return html`
+    <tr>
+      <td>${d.name}${d.requested_from === 'borrower' && d.borrower_note ? html`<div class="small muted">${d.borrower_note}</div>` : ''}</td>
+      <td>
+        <select data-action="doc-status" data-id="${d.id}" aria-label="Status" style="width:auto">
+          ${META.documentStatuses.map((s) => html`<option value="${s}" ${d.status === s ? 'selected' : ''}>${titleCase(s)}</option>`)}
+        </select>
+      </td>
+      <td class="small">
+        ${d.filename ? html`<a href="/api/transactions/${f.id}/documents/${d.id}/file">${d.filename}</a> <span class="muted">(${Math.ceil(d.size / 1024)} KB · ${niceDateTime(d.uploaded_at)})</span><br>` : ''}
+        <label class="btn btn-sm" style="margin:4px 0 0;display:inline-flex">${d.filename ? 'Replace' : 'Upload'}
+          <input type="file" data-action="upload" data-id="${d.id}" hidden>
+        </label>
+      </td>
+      <td class="small" style="white-space:nowrap">
+        ${d.requested_from === 'borrower' && d.status === 'received' ? html`<button class="btn btn-sm btn-primary" data-action="accept-doc" data-id="${d.id}">Accept</button>` : ''}
+        ${d.requested_from === 'borrower' && d.status !== 'requested' ? html`<button class="btn btn-sm" data-action="rerequest-doc" data-id="${d.id}">Request again</button>` : ''}
+        <button class="link-btn" data-action="delete-doc" data-id="${d.id}" aria-label="Remove">✕</button>
+      </td>
+    </tr>`;
+}
+
+function docTable(f, docs, empty) {
+  return docs.length
+    ? html`<div class="table-wrap"><table>
+        <thead><tr><th>Document</th><th>Status</th><th>File</th><th></th></tr></thead>
+        <tbody>${docs.map((d) => docRow(f, d))}</tbody></table></div>`
+    : html`<div class="empty">${empty}</div>`;
+}
+
 function documentsTab(f) {
+  const borrowerDocs = f.documents.filter((d) => d.requested_from === 'borrower').reverse();
+  const staffDocs = f.documents.filter((d) => d.requested_from !== 'borrower');
+  const buyers = f.parties.filter((p) => p.role === 'buyer');
+  const accepted = borrowerDocs.filter((d) => ['reviewed', 'recorded'].includes(d.status)).length;
+  const toReview = borrowerDocs.filter((d) => d.status === 'received').length;
+  const links = f.portal_links;
+  const newLink = state.newLink?.fileId === f.id ? state.newLink : null;
   return html`
     <div class="card">
-      <h2>Documents</h2>
-      ${f.documents.length ? html`<div class="table-wrap"><table>
-        <thead><tr><th>Document</th><th>Category</th><th>Status</th><th>File</th><th></th></tr></thead>
-        <tbody>${f.documents.map((d) => html`
-          <tr>
-            <td>${d.name}</td>
-            <td class="small">${titleCase(d.category)}</td>
-            <td>
-              <select data-action="doc-status" data-id="${d.id}" aria-label="Status" style="width:auto">
-                ${META.documentStatuses.map((s) => html`<option value="${s}" ${d.status === s ? 'selected' : ''}>${titleCase(s)}</option>`)}
-              </select>
-            </td>
-            <td class="small">
-              ${d.filename ? html`<a href="/api/transactions/${f.id}/documents/${d.id}/file">${d.filename}</a> <span class="muted">(${Math.ceil(d.size / 1024)} KB)</span><br>` : ''}
-              <label class="btn btn-sm" style="margin:4px 0 0;display:inline-flex">${d.filename ? 'Replace' : 'Upload'}
-                <input type="file" data-action="upload" data-id="${d.id}" hidden>
-              </label>
-            </td>
-            <td><button class="link-btn" data-action="delete-doc" data-id="${d.id}" aria-label="Remove">✕</button></td>
-          </tr>`)}</tbody></table></div>` : html`<div class="empty">No documents tracked yet.</div>`}
+      <div class="spread">
+        <div>
+          <h2>Borrower portal</h2>
+          <div class="small muted">A private page where the buyer uploads the documents below from any phone or computer. Borrower documents must be accepted before the file can leave “Closing Scheduled”.</div>
+        </div>
+        <div class="row">
+          ${toReview ? html`<span class="badge warn">${toReview} to review</span>` : ''}
+          <span class="badge ${accepted === borrowerDocs.length && borrowerDocs.length ? 'ok' : ''}">${accepted}/${borrowerDocs.length} accepted</span>
+        </div>
+      </div>
+
+      ${newLink ? html`
+        <div class="ready" style="margin-top:12px">
+          <strong>Portal link for ${newLink.party_name}.</strong> Copy it now. For security it can't be shown again (you can always create a new one).
+          <div class="inline-form" style="margin-top:8px">
+            <input id="new-portal-link" readonly value="${newLink.url}" aria-label="Portal link">
+            <button type="button" class="btn btn-primary" data-action="copy-link">Copy</button>
+            <a class="btn" href="${newLink.url}" target="_blank" rel="noopener">Preview ↗</a>
+          </div>
+        </div>` : ''}
+
+      <div class="row" style="margin-top:12px">
+        ${buyers.length
+          ? buyers.map((b) => html`<button class="btn btn-sm" data-action="create-link" data-id="${b.id}">+ Create link for ${b.name}</button>`)
+          : html`<span class="small muted">Add a buyer on the <a href="#/files/${f.id}/parties">Parties</a> tab to create a portal link.</span>`}
+      </div>
+
+      ${links.length ? html`
+        <h3>Links</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Borrower</th><th>Created</th><th>Expires</th><th>Last opened</th><th></th></tr></thead>
+          <tbody>${links.map((l) => html`
+            <tr>
+              <td>${l.party_name}</td>
+              <td class="small">${niceDateTime(l.created_at)}</td>
+              <td class="small">${l.revoked_at ? html`<span class="badge">Revoked</span>` : l.active ? niceDate(l.expires_at.slice(0, 10)) : html`<span class="badge">Expired</span>`}</td>
+              <td class="small">${l.last_used_at ? niceDateTime(l.last_used_at) : 'Never'}</td>
+              <td>${l.active ? html`<button class="btn btn-sm btn-danger" data-action="revoke-link" data-id="${l.id}">Revoke</button>` : ''}</td>
+            </tr>`)}</tbody></table></div>` : ''}
+
+      <h3>Requested from borrower</h3>
+      ${docTable(f, borrowerDocs, 'Nothing requested from the borrower.')}
+      <form data-form="add-doc" class="inline-form">
+        <input type="hidden" name="requested_from" value="borrower">
+        <input type="hidden" name="category" value="borrower">
+        <input name="name" placeholder="Request a document (e.g. Trust certificate)" required>
+        <input name="borrower_note" placeholder="Instructions for the borrower (optional)">
+        <button class="btn btn-primary">Request</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Title & closing documents</h2>
+      ${docTable(f, staffDocs, 'No documents tracked yet.')}
       <form data-form="add-doc" class="inline-form">
         <input name="name" placeholder="Document name (e.g. Payoff letter)" required>
         <select name="category">${META.documentCategories.map((c) => html`<option value="${c}">${titleCase(c)}</option>`)}</select>
@@ -568,6 +654,28 @@ document.addEventListener('click', async (e) => {
     case 'delete-party':
       if (!confirm('Remove this party?')) return;
       return run(() => api('DELETE', `/transactions/${tid}/parties/${id}`));
+    case 'create-link':
+      return run(async () => {
+        const link = await api('POST', `/transactions/${tid}/portal-links`, { party_id: Number(id) });
+        state.newLink = { fileId: tid, party_name: link.party_name, url: `${location.origin}${link.path}` };
+      }, 'Portal link created');
+    case 'copy-link': {
+      const input = document.getElementById('new-portal-link');
+      try { await navigator.clipboard.writeText(input.value); } catch { input.select(); document.execCommand('copy'); }
+      toast('Link copied');
+      return;
+    }
+    case 'revoke-link':
+      if (!confirm('Revoke this link? The borrower will no longer be able to open it.')) return;
+      state.newLink = null;
+      return run(() => api('DELETE', `/transactions/${tid}/portal-links/${id}`), 'Link revoked');
+    case 'accept-doc':
+      return run(() => api('PATCH', `/transactions/${tid}/documents/${id}`, { status: 'reviewed' }), 'Document accepted');
+    case 'rerequest-doc': {
+      const note = prompt('What should the borrower fix or send? (shown in their portal)');
+      if (note === null) return;
+      return run(() => api('PATCH', `/transactions/${tid}/documents/${id}`, { status: 'requested', ...(note.trim() ? { borrower_note: note.trim() } : {}) }), 'Sent back to borrower');
+    }
     case 'delete-doc':
       if (!confirm('Remove this document and any uploaded file?')) return;
       return run(() => api('DELETE', `/transactions/${tid}/documents/${id}`));

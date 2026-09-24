@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Your Closing Documents · MS Title Co</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f5eff'/%3E%3Ctext x='16' y='21' font-size='13' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3EMS%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    main.portal { max-width: 720px; }
+    .hello { font-size: 1.35rem; font-weight: 700; margin: 0 0 2px; }
+    .progress-line { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 12px 0 6px; }
+    .progress-line > div { height: 100%; background: var(--primary); }
+    .wire { background: var(--danger-bg); color: var(--danger); border-radius: var(--radius); padding: 12px 16px; font-size: .9rem; margin-bottom: 16px; }
+    .doc { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; background: var(--surface); }
+    .doc.done { opacity: .85; }
+    .doc .top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .doc .name { font-weight: 600; }
+    .doc .hint { font-size: .88rem; color: var(--muted); margin-top: 4px; }
+    .doc .note { font-size: .88rem; background: var(--warn-bg); color: var(--warn); padding: 6px 10px; border-radius: 6px; margin-top: 8px; }
+    .doc .file { font-size: .85rem; color: var(--muted); margin-top: 8px; word-break: break-all; }
+    .doc .actions { margin-top: 10px; }
+    .upload-btn { position: relative; overflow: hidden; }
+    .upload-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .bar { height: 6px; border-radius: 3px; background: var(--border); margin-top: 10px; overflow: hidden; display: none; }
+    .bar > div { height: 100%; width: 0; background: var(--ok); transition: width .15s; }
+    .uploading .bar { display: block; }
+    .summary { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .all-done { background: var(--ok-bg); color: var(--ok); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand"><span class="logo">MS</span> Title Co</span>
+    <span class="small muted">Secure document portal</span>
+  </header>
+  <main id="app" class="portal" aria-live="polite"><div class="empty">Loading…</div></main>
+  <div id="toast" role="status"></div>
+  <script type="module" src="/portal.js"></script>
+</body>
+</html>

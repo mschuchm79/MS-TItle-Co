@@ -7,6 +7,7 @@ import {
   DOCUMENT_CATEGORIES,
   DOCUMENT_STATUSES,
   STANDARD_EXCEPTIONS,
+  BORROWER_DOCUMENTS,
   standardRequirements,
   buildTasks,
   addDays,
@@ -29,6 +30,9 @@ const notFound = (what) => new HttpError(404, `${what} not found`);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const REQUIREMENT_STATUSES = ['open', 'satisfied', 'waived'];
 const EXCEPTION_STATUSES = ['remains', 'removed'];
+const REQUESTED_FROM = ['staff', 'borrower'];
+// Borrower documents count as done once staff accept them.
+export const ACCEPTED_DOC_STATUSES = ['reviewed', 'recorded'];
 
 function str(v, max = 500) {
   if (v === undefined || v === null) return null;
@@ -66,7 +70,7 @@ export function logActivity(db, transactionId, message) {
   db.prepare('INSERT INTO activity (transaction_id, message) VALUES (?, ?)').run(transactionId, message);
 }
 
-function touch(db, id) {
+export function touch(db, id) {
   db.prepare("UPDATE transactions SET updated_at = datetime('now') WHERE id = ?").run(id);
 }
 
@@ -133,6 +137,11 @@ export function createTransaction(db, input) {
     for (const e of STANDARD_EXCEPTIONS) insItem.run(id, 'B-II', e, 'remains');
     insertMunicipalChecks(db, id);
 
+    const insDoc = db.prepare(
+      "INSERT INTO documents (transaction_id, name, category, status, requested_from, borrower_note) VALUES (?, ?, 'borrower', 'requested', 'borrower', ?)",
+    );
+    for (const d of BORROWER_DOCUMENTS) if (financed || !d.financedOnly) insDoc.run(id, d.name, d.hint);
+
     const insParty = db.prepare(
       'INSERT INTO parties (transaction_id, role, name, company, email, phone) VALUES (?, ?, ?, ?, ?, ?)',
     );
@@ -168,6 +177,19 @@ export function getBlockers(db, t) {
       .all(t.id);
     for (const m of unchecked) blockers.push({ type: 'municipal', id: m.id, message: `Municipal record not checked: ${m.label}` });
   }
+
+  if (getStage(t.stage)?.requiresBorrowerDocs) {
+    const pending = db
+      .prepare(
+        `SELECT id, name, status FROM documents WHERE transaction_id = ? AND requested_from = 'borrower'
+         AND status NOT IN (${ACCEPTED_DOC_STATUSES.map(() => '?').join(', ')}) ORDER BY id`,
+      )
+      .all(t.id, ...ACCEPTED_DOC_STATUSES);
+    for (const d of pending) {
+      const why = d.status === 'requested' ? 'not uploaded yet' : 'uploaded, needs review';
+      blockers.push({ type: 'borrower_document', id: d.id, message: `Borrower document ${why}: ${d.name}` });
+    }
+  }
   return blockers;
 }
 
@@ -200,6 +222,11 @@ export function getTransaction(db, id) {
     ),
     commitment: q('SELECT * FROM commitment_items WHERE transaction_id = ? ORDER BY schedule, id'),
     documents: q('SELECT * FROM documents WHERE transaction_id = ? ORDER BY id DESC'),
+    portal_links: q(
+      `SELECT l.id, l.party_id, p.name AS party_name, l.created_at, l.expires_at, l.revoked_at, l.last_used_at,
+        (l.revoked_at IS NULL AND l.expires_at > datetime('now')) AS active
+       FROM portal_links l JOIN parties p ON p.id = l.party_id WHERE l.transaction_id = ? ORDER BY l.id DESC`,
+    ),
     municipal,
     bsa: bsaLinks(t, parties.find((p) => p.role === 'seller')?.name),
     activity: q('SELECT * FROM activity WHERE transaction_id = ? ORDER BY id DESC LIMIT 200'),
@@ -298,7 +325,7 @@ export function revertStage(db, id) {
 
 // ---------------------------------------------------------------- tasks
 
-function requireChild(db, table, transactionId, childId, what) {
+export function requireChild(db, table, transactionId, childId, what) {
   const row = db.prepare(`SELECT * FROM ${table} WHERE id = ? AND transaction_id = ?`).get(Number(childId), Number(transactionId));
   if (!row) throw notFound(what);
   return row;
@@ -444,10 +471,11 @@ export function addDocument(db, transactionId, input) {
   if (!name) throw bad('name is required');
   const category = oneOf(input.category ?? 'other', DOCUMENT_CATEGORIES, 'category');
   const status = oneOf(input.status ?? 'requested', DOCUMENT_STATUSES, 'status');
+  const requestedFrom = oneOf(input.requested_from || 'staff', REQUESTED_FROM, 'requested_from');
   const { lastInsertRowid } = db
-    .prepare('INSERT INTO documents (transaction_id, name, category, status) VALUES (?, ?, ?, ?)')
-    .run(t.id, name, category, status);
-  logActivity(db, t.id, `Document tracked: ${name} (${status})`);
+    .prepare('INSERT INTO documents (transaction_id, name, category, status, requested_from, borrower_note) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(t.id, name, category, status, requestedFrom, str(input.borrower_note, 1000));
+  logActivity(db, t.id, `Document ${requestedFrom === 'borrower' ? 'requested from borrower' : 'tracked'}: ${name} (${status})`);
   touch(db, t.id);
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(lastInsertRowid);
 }
@@ -460,17 +488,24 @@ export function updateDocument(db, transactionId, docId, input) {
   const doc = getDocument(db, transactionId, docId);
   const status = 'status' in input ? oneOf(input.status, DOCUMENT_STATUSES, 'status') : doc.status;
   const category = 'category' in input ? oneOf(input.category, DOCUMENT_CATEGORIES, 'category') : doc.category;
-  db.prepare('UPDATE documents SET status = ?, category = ? WHERE id = ?').run(status, category, doc.id);
+  const requestedFrom = 'requested_from' in input ? oneOf(input.requested_from, REQUESTED_FROM, 'requested_from') : doc.requested_from;
+  const note = 'borrower_note' in input ? str(input.borrower_note, 1000) : doc.borrower_note;
+  db.prepare('UPDATE documents SET status = ?, category = ?, requested_from = ?, borrower_note = ? WHERE id = ?')
+    .run(status, category, requestedFrom, note, doc.id);
   if (status !== doc.status) logActivity(db, doc.transaction_id, `Document ${doc.name} marked ${status}`);
+  if (note !== doc.borrower_note && requestedFrom === 'borrower') {
+    logActivity(db, doc.transaction_id, `Borrower instructions updated for ${doc.name}`);
+  }
   touch(db, doc.transaction_id);
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(doc.id);
 }
 
-export function attachDocumentFile(db, doc, { filename, storedName, size }) {
+export function attachDocumentFile(db, doc, { filename, storedName, size }, { by = 'staff' } = {}) {
   db.prepare(
     "UPDATE documents SET filename = ?, stored_name = ?, size = ?, uploaded_at = datetime('now'), status = CASE WHEN status = 'requested' THEN 'received' ELSE status END WHERE id = ?",
   ).run(filename, storedName, size, doc.id);
-  logActivity(db, doc.transaction_id, `File uploaded for ${doc.name}: ${filename}`);
+  const who = by === 'staff' ? 'File uploaded' : `${by} uploaded via borrower portal`;
+  logActivity(db, doc.transaction_id, `${who} for ${doc.name}: ${filename}`);
   touch(db, doc.transaction_id);
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(doc.id);
 }
@@ -531,7 +566,16 @@ export function dashboard(db, today = new Date().toISOString().slice(0, 10)) {
     )
     .all(today);
 
+  const borrowerUploads = db
+    .prepare(
+      `SELECT d.id, d.name, d.uploaded_at, t.id AS transaction_id, t.file_number, t.property_address
+       FROM documents d JOIN transactions t ON t.id = d.transaction_id
+       WHERE d.requested_from = 'borrower' AND d.status = 'received' ORDER BY d.uploaded_at LIMIT 50`,
+    )
+    .all();
+
   return {
+    borrowerUploads,
     stages: STAGES.map((s) => ({ key: s.key, label: s.label, count: byStage[s.key] })),
     activeFiles: Object.entries(byStage).filter(([k]) => k !== 'closed').reduce((s, [, n]) => s + n, 0),
     upcomingClosings,

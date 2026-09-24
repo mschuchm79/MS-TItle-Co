@@ -63,7 +63,21 @@ CREATE TABLE IF NOT EXISTS documents (
   filename TEXT,
   stored_name TEXT,
   size INTEGER,
-  uploaded_at TEXT
+  uploaded_at TEXT,
+  requested_from TEXT NOT NULL DEFAULT 'staff',
+  borrower_note TEXT
+);
+
+-- Private borrower-portal links. Only a SHA-256 hash of the token is stored.
+CREATE TABLE IF NOT EXISTS portal_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  party_id INTEGER NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  last_used_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS activity (
@@ -90,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_parties_tx ON parties(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_items_tx ON commitment_items(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_docs_tx ON documents(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_activity_tx ON activity(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_portal_tx ON portal_links(transaction_id);
 `;
 
 export function openDatabase(path = ':memory:') {
@@ -105,6 +120,12 @@ export function openDatabase(path = ':memory:') {
 function migrate(db) {
   const cols = db.prepare('PRAGMA table_info(transactions)').all().map((c) => c.name);
   if (!cols.includes('bsa_uid')) db.exec('ALTER TABLE transactions ADD COLUMN bsa_uid INTEGER');
+
+  const docCols = db.prepare('PRAGMA table_info(documents)').all().map((c) => c.name);
+  if (!docCols.includes('requested_from')) {
+    db.exec("ALTER TABLE documents ADD COLUMN requested_from TEXT NOT NULL DEFAULT 'staff'");
+  }
+  if (!docCols.includes('borrower_note')) db.exec('ALTER TABLE documents ADD COLUMN borrower_note TEXT');
 
   // Give files opened before municipal checks existed their checklist.
   const missing = db

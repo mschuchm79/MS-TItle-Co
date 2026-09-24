@@ -13,6 +13,7 @@ export const STAGES = [
       { title: 'Deposit earnest money into escrow', offsetDays: -28 },
       { title: 'Enter all parties and contact information', offsetDays: -28 },
       { title: 'Order payoff statement(s) for seller liens', offsetDays: -25 },
+      { title: 'Send borrower portal link to buyer for closing documents', offsetDays: -27 },
     ],
   },
   {
@@ -51,7 +52,8 @@ export const STAGES = [
   {
     key: 'scheduled',
     label: 'Closing Scheduled',
-    description: 'Documents prepared, figures balanced, signing appointment set.',
+    description: 'Documents prepared, figures balanced, signing appointment set, borrower documents accepted.',
+    requiresBorrowerDocs: true,
     tasks: [
       { title: 'Prepare deed and closing documents', offsetDays: -4 },
       { title: 'Order final water / sewer meter read and utility transfer', offsetDays: -3 },
@@ -145,10 +147,22 @@ export const DOCUMENT_CATEGORIES = [
   'closing',
   'recorded',
   'policy',
+  'borrower',
   'other',
 ];
 
 export const DOCUMENT_STATUSES = ['requested', 'received', 'reviewed', 'recorded'];
+
+// Documents the buyer / borrower must provide before closing, requested
+// through the borrower portal. `hint` is shown to the borrower.
+export const BORROWER_DOCUMENTS = [
+  { name: 'Government-issued photo ID (each signer)', hint: "Driver's license or passport, front and back. Every person signing needs one." },
+  { name: 'Vesting instructions', hint: 'How you will hold title, e.g. "John and Jane Smith, married, as tenants by the entirety".' },
+  { name: 'Proof of funds to close', hint: 'Recent bank statement showing funds for your down payment and closing costs.' },
+  { name: 'Earnest money deposit receipt', hint: 'Receipt or cancelled check for your earnest money deposit.' },
+  { name: "Homeowner's insurance binder / declarations page", hint: 'From your insurance agent, naming your lender as mortgagee.', financedOnly: true },
+  { name: 'Signed Closing Disclosure acknowledgment', hint: 'Your lender sends this at least 3 business days before closing.', financedOnly: true },
+];
 
 // Standard Schedule B-II exceptions that appear on nearly every commitment.
 export const STANDARD_EXCEPTIONS = [
